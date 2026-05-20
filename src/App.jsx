@@ -321,11 +321,13 @@ export default function App() {
   const saveMemo = () => {
     const text = aiResult?.summary || transcript.trim();
     if (!text) return;
+    // 원문(transcript)에서 날짜 파싱 → selectedDate보다 우선
+    const parsedDate = parseKoreanDate(transcript) || selectedDate;
     setMemos(prev => [{
       id: Date.now(), text,
       rawText: transcript.trim(),
       category: selectedCat,
-      date: selectedDate,
+      date: parsedDate,
       recordedAt: recordedAt || new Date().toISOString(),
       done: false,
       priority: aiResult?.priority || "normal",
