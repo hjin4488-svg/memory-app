@@ -75,12 +75,13 @@ async function callAI(rawText, categories, todayStr, tomorrowStr) {
 - summary: 핵심 한 줄 요약 (말버릇 "어","음","그거" 등 제거)
 - category: 기존 카테고리 ID 중 적합한 것. 없으면 새 카테고리 한글 이름
 - isNewCategory: 새 카테고리면 true
-- date: 말 속 날짜를 YYYY-MM-DD 형식으로 정확히 변환
-  * "5월 16일" → ${year}-05-16
+- date: 말 속 날짜를 YYYY-MM-DD 형식으로 변환. 반드시 ${year}년 기준!
+  * "5월 16일" → ${year}-05-16 (이 규칙 절대 지킬 것)
+  * "5월 22일" → ${year}-05-22
   * "6월 1일" → ${year}-06-01
   * "내일" → ${tomorrowStr}
-  * "다음주 월요일" → 오늘(${dayOfWeek}요일)부터 다음 월요일 계산
-  * 날짜 언급 없으면 → ${todayStr}
+  * "다음주 월요일" → 오늘(${dayOfWeek}요일)부터 가장 가까운 월요일
+  * 날짜 언급 없으면 → 반드시 ${todayStr}
 - isRepeat: "매주","매일","매달" 언급시 true
 - repeatRule: "weekly-MON","daily","monthly-15" 형태
 - priority: "urgent"(급해/중요/빨리) 또는 "normal"
@@ -187,37 +188,51 @@ export default function App() {
   const catOf = (id) => categories.find(c => c.id === id) || { label: id, color: "#888" };
   const nextColor = () => COLORS[categories.length % COLORS.length];
 
+  const transcriptRef = useRef("");
+
   // 녹음 토글 (한번 누르면 시작, 다시 누르면 종료 후 자동 AI 분석)
   const toggleRecording = () => {
     if (recording) {
-      // 종료
+      // 종료 → onend에서 자동 AI 분석
       recognitionRef.current?.stop();
-      setRecording(false);
     } else {
       // 시작
       if (!micSupport) return;
+      transcriptRef.current = "";
+      setTranscript("");
+      setAiResult(null); setCommandResult(null); setReportText(null); setDuplicates([]);
+      setRecordedAt(new Date().toISOString());
+
       const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
       const r = new SR();
-      r.lang = "ko-KR"; r.interimResults = true; r.continuous = true;
+      r.lang = "ko-KR";
+      r.interimResults = false; // 중간 결과 끄기 → 중복 방지
+      r.continuous = false;     // 한 문장씩 → 중복 방지
       recognitionRef.current = r;
-      r.onresult = (e) => setTranscript(Array.from(e.results).map(x => x[0].transcript).join(""));
+
+      r.onresult = (e) => {
+        // 최종 결과만 누적
+        let final = "";
+        for (let i = 0; i < e.results.length; i++) {
+          if (e.results[i].isFinal) final += e.results[i][0].transcript;
+        }
+        transcriptRef.current = final;
+        setTranscript(final);
+      };
+
       r.onend = () => {
         setRecording(false);
+        // 녹음 끝나면 자동 AI 분석
+        if (transcriptRef.current.trim()) {
+          runAI(transcriptRef.current);
+        }
       };
+
       r.onerror = () => setRecording(false);
       r.start();
       setRecording(true);
-      setAiResult(null); setCommandResult(null); setReportText(null); setDuplicates([]);
-      setRecordedAt(new Date().toISOString());
     }
   };
-
-  // 녹음 종료 후 자동 AI 분석
-  useEffect(() => {
-    if (!recording && transcript.trim() && !aiResult && !aiProcessing) {
-      runAI(transcript);
-    }
-  }, [recording]);
 
   const runAI = async (text) => {
     const t = text || transcript;
