@@ -40,6 +40,41 @@ function getDday(dateStr) {
   return { label: `D-${diff}`, color: "#888" };
 }
 
+// 한국어 텍스트에서 날짜 직접 파싱
+function parseKoreanDate(text) {
+  const now = new Date();
+  const year = now.getFullYear();
+
+  // "5월 22일", "5월22일" 패턴
+  const monthDay = text.match(/(\d{1,2})\s*월\s*(\d{1,2})\s*일/);
+  if (monthDay) {
+    const m = String(monthDay[1]).padStart(2,"0");
+    const d = String(monthDay[2]).padStart(2,"0");
+    return `${year}-${m}-${d}`;
+  }
+
+  // "내일"
+  if (text.includes("내일")) return getTomorrow();
+
+  // "오늘"
+  if (text.includes("오늘")) return getToday();
+
+  // "다음주 월요일~일요일"
+  const dayMap = {"월":1,"화":2,"수":3,"목":4,"금":5,"토":6,"일":0};
+  if (text.includes("다음주")||text.includes("다음 주")) {
+    for (const [name, num] of Object.entries(dayMap)) {
+      if (text.includes(name+"요일")||text.includes(name+"욜")) {
+        const d = new Date();
+        const diff = (num - d.getDay() + 7) % 7 || 7;
+        d.setDate(d.getDate() + diff + (diff===0?7:0));
+        return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+      }
+    }
+  }
+
+  return null; // 날짜 없음
+}
+
 function similarityCheck(text1, text2) {
   const t1 = text1.toLowerCase().replace(/\s/g,"");
   const t2 = text2.toLowerCase().replace(/\s/g,"");
@@ -270,7 +305,9 @@ export default function App() {
           result.categoryId = result.category;
         }
         setSelectedCat(result.categoryId || "etc");
-        setSelectedDate(result.date || getToday());
+        // 코드로 직접 날짜 파싱 (AI보다 정확)
+        const parsedDate = parseKoreanDate(t);
+        setSelectedDate(parsedDate || result.date || getToday());
         const dups = memos.filter(m => !m.done && similarityCheck(m.text, result.summary));
         setDuplicates(dups);
         setAiResult(result);
